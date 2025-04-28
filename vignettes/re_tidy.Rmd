@@ -1,0 +1,132 @@
+---
+title: "Analyzing changes in soil organic matter during elevated CO2 experiments"
+subtitle: "Chapter 4 Report Excercise -- Data Wrangling"
+author: "Ting Tan"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fig_align: 'center'
+bibliography: literatures.bib
+csl: apa.csl
+---
+
+```{r setup, include=FALSE, eval = TRUE}
+knitr::opts_chunk$set(
+  comment = "#>", echo = FALSE, fig.width = 6
+)
+
+library(dplyr)
+library(tidyr)
+library(readr)
+library(here)
+library(knitr)
+```
+
+## Introduction
+
+### research question and hypothesis
+
+How does the decomposition rate of soil organic carbon change response to the increased atmospheric $CO_2$ concentration?
+Hypothesis: Faster Decomposition Under  Increased Atmospheric $CO_2$  Limits Soil Carbon Storage [@groenigen2014].
+
+## Available data
+This project use the "Database S1" -- Overview of $CO_2$ enrichment studies reporting soil C contents that were used in our analysis, which is downloaded from Supplementary Material of the following paper: *Groenigen, Kees Jan van, Xuan Qi, Craig W. Osenberg, Yiqi Luo, and Bruce A. Hungate. “Faster Decomposition Under Increased Atmospheric CO2 Limits Soil Carbon Storage.” Science 344, no. 6183 (May 2, 2014): 508–9. https://doi.org/10.1126/science.1249534*. 
+
+“Database S1” contains data of soil organic carbon measurements in experiments, where ecosystems  are exposed to ambient (low) and elevated (high) CO concentrations ("mean", $g C m_2$). The mean soil organic carbon  of multiple samples (“n”, $g C m_2$) is recorded within each experiment for different sample dates. Information  is provided for the time in years since the start of the experiment (“Time (years)”).
+
+Manually clean the data in the tab “Database S1” and save it  as a CSV file that can be read into R in the the project data folder (`./data/1249534s1.csv`)
+
+## Implementation
+
+Then, write your code into the R chunks of the file to aggregate the data  per experiment and calculate the log-response ratio within each experiment, as specified below.  A log-response ratio can be used to quantify the effect that a treatment (e.g., elevated CO2 ) can have  on your target variable (e.g., soil organic matter content). The log-response ratio can be calculated  as:
+
+* 1. Calculate the log-response ratio within each experiment, qualifying the the effect that elevated CO2 can have on SOC storage.
+* 2. 
+
+## Results and Interpretation
+
+* Interpret your results after aggregating the data: What do your final numbers mean? Do they * support your initial hypothesis? Why so, why not?
+
+```{r DataClean, eval = TRUE}
+# Read the soil organic carbon measurement dataset, skipping meta-data
+soc_values <- readr::read_csv(here("data_raw/1249534s1.csv"), skip = 3)
+
+# select variables for analysis
+soc_values_clean <- soc_values |>
+  select(`Experiment`,
+         `Time (years)`,
+         starts_with("ambient"), 
+         starts_with("increased"))
+
+# Remove empty rows
+soc_values_clean <- soc_values_clean[rowSums(!is.na(soc_values)) > 0, ]
+
+# Remove empty columns
+soc_values_clean <- soc_values_clean[, colSums(!is.na(soc_values_clean)) > 0]
+
+# Fill missing values
+soc_values_clean <- soc_values_clean |> 
+  tidyr::fill(everything(), .direction = "down")
+
+# Rename columns for better readability
+soc_values_clean <- soc_values_clean |>
+  dplyr::rename(
+    CO2_elevated = `increased CO2...7`, 
+    CO2_ambient = `ambient CO2...6`,      
+    SOC_elevated = `increased CO2...9`,   
+    SOC_ambient = `ambient CO2...8`      
+  ) 
+```
+
+
+```{r Analysis, eval = TRUE}
+# Data calculations: this part will include log-transformed response ratios (LRR) for CO2 and SOC
+soc_values_clean <- soc_values_clean |>
+
+  # Calculate log-response ratios for each experiment (log of elevated / ambient)
+  dplyr::mutate(
+    CO2_lrr_exp = log(CO2_elevated / CO2_ambient),  # Log-transformed ratio for CO2
+    SOC_lrr_exp = log(SOC_elevated / SOC_ambient)   # Log-transformed ratio for SOC
+  ) |>
+  
+  # Categorize data into experimental phases based on time (years)
+  dplyr::mutate(phase = case_when(
+      `Time (years)` < 3 ~ "Early",   # Phase 1: Early (less than 3 years)
+      `Time (years)` >= 3 & `Time (years)` <= 6 ~ "Mid",   # Phase 2: Mid (3 to 6 years)
+      `Time (years)` > 6 ~ "Late"   # Phase 3: Late (more than 6 years)
+  )) |>
+  
+  # Calculate mean log-response ratio for each phase by aggregating the data
+  group_by(phase) |>
+  mutate(
+    CO2_lrr_pha = log(mean(CO2_elevated, na.rm = TRUE) / mean(CO2_ambient, na.rm = TRUE)),  # Mean log ratio for CO2 per phase
+    SOC_lrr_pha = log(mean(SOC_elevated, na.rm = TRUE) / mean(SOC_ambient, na.rm = TRUE))   # Mean log ratio for SOC per phase
+  ) |> 
+  
+  # Ungroup the data after calculation to remove the grouping structure
+  ungroup()
+
+# Save the cleaned and calculated data as an RDS file
+write_rds(soc_values_clean, 
+          file = here::here("data", "soc_values_clean.rds"))
+
+# Generate a summary of the results as a markdown table
+soc_values_clean_summary <- soc_values_clean |>
+  select(phase, CO2_lrr_pha, SOC_lrr_pha) |>  # Select relevant columns for the summary
+  distinct() |>  # Remove duplicate rows for clarity
+  knitr::kable(format = "markdown", col.names = c("Phase", "CO2 LRR (Mean of Phase)", "SOC LRR (Mean of Phase)"))
+
+# Print the summary table
+print(soc_values_clean_summary)
+
+# Save the summary table as an RDS file
+write_rds(soc_values_clean_summary, 
+          file = here::here("data", "soc_values_clean_summary.rds"))
+
+```
+
+## Reference
+```{r, echo=FALSE}
+```
+
+

@@ -1,0 +1,318 @@
+---
+title: "Key Environmental Predictors of GPP"
+subtitle: "Chapter 9 Exercise Report - Stepwise Regression Analysis"
+author: "Ting Tan (22-108-534)"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fig_align: 'center'
+---
+
+```{r setup, include=FALSE, eval = TRUE}
+knitr::opts_chunk$set(
+  comment = "#>", echo = FALSE, fig.width = 10, message = FALSE
+)
+
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(cowplot)
+library(here)
+library(tidyr)
+```
+
+## Introduction
+
+Gross Primary Production (GPP) represents the total carbon uptake by vegetation and is influenced by multiple environmental variables. Using high-frequency half-hourly flux data, this study aims to identify the key predictors of GPP. A stepwise forward regression algorithm is implemented from scratch in R to build a predictive model and select the most relevant variables.
+
+## Reasearch question
+
+**Which environmental variables best predict GPP in half-hourly flux data, as determined by a stepwise forward regression approach?**
+
+## Available data
+
+The dataset, sourced from [here](https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv), contains daily aggregated measurements from four flux tower sites in Switzerland. Key variables include air temperature (TA_F), incoming shortwave radiation (SW_IN_F), incoming longwave radiation (LW_IN_F), vapor pressure deficit (VPD_F), wind speed (WS_F), precipitation (P_F), CO₂ mole fraction(CO2_F_MDS), Photosynthetic photon flux density (PPFD_IN), Friction velocity(USTAR, indicates atmospheric turbulence). The target variable for modeling is gross primary production (GPP_NT_VUT_REF). The dataset also provides quality-controlled and gap-filled versions of the variables.
+
+For modeling GPP, a subset of variables was selected based on data quality. Specifically, variables ending with `_F` were prioritized due to their higher data completeness. Most variables ending with `_F_MDS`, which are gap-filled using the Marginal Distribution Sampling (MDS) method, were excluded because they contain significant missing values. However, key predictors such as `CO2_F_MDS`, `PPFD_IN`, and `USTAR` were retained despite some missing data.
+
+### Variable Descriptions
+```{r MetaDataPre}
+variable_metadata <- data.frame(
+  id = 1:15,
+  variable = c(
+    "TA_F", "SW_IN_F", "LW_IN_F", "VPD_F", "PA_F", "P_F", "WS_F",
+    "TA_F_MDS", "SW_IN_F_MDS", "LW_IN_F_MDS", "VPD_F_MDS", "CO2_F_MDS",
+    "PPFD_IN", "USTAR", "GPP_NT_VUT_REF"
+  ),
+  units = c(
+      "°C", "W/m²", "W/m²", "hPa", "hPa", "mm", "m/s",
+      "°C", "W/m²", "W/m²", "hPa", "ppm", "µmol/m²/s", "m/s",
+      "µmol CO₂/m²/s"
+    ),
+  description = c(
+    "Air temperature, consolidated from TA_F_MDS and TA_ERA",
+    "Shortwave radiation, incoming, consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)",
+    "Longwave radiation, incoming, consolidated from LW_IN_F_MDS and LW_IN_ERA",
+    "Vapor Pressure Deficit, consolidated from VPD_F_MDS and VPD_ERA",
+    "Atmospheric pressure, consolidated from PA and PA_ERA",
+    "Precipitation, consolidated from P and P_ERA",
+    "Wind speed, consolidated from WS and WS_ERA",
+    "Air temperature, gap-filled using MDS (Marginal Distribution Sampling)",
+    "Shortwave radiation, incoming, gap-filled using MDS (negative values set to zero)",
+    "Longwave radiation, incoming, gap-filled using MDS",
+    "Vapor Pressure Deficit, gap-filled using MDS",
+    "CO₂ mole fraction, gap-filled with MDS",
+    "Photosynthetic photon flux density, incoming",
+    "Friction velocity, indicates atmospheric turbulence",
+    "Gross Primary Production, from Nighttime partitioning method"
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+kable(variable_metadata, caption = "Variable Descriptions")
+```
+### Data Overview 
+```{r DataOverview}
+# Read data from GitHub
+df <- read.csv("https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv")
+
+# Display first few rows and summary
+head(df)
+summary(df)
+
+# Convert TIMESTAMP to Date format
+df <- df |> mutate(TIMESTAMP = as.Date(TIMESTAMP))
+
+# Calculate date range for each site
+site_time_summary <- df %>%
+  group_by(siteid) %>%
+  summarise(
+    start_date = min(TIMESTAMP, na.rm = TRUE),
+    end_date = max(TIMESTAMP, na.rm = TRUE),
+    .groups = "drop"
+  )
+  
+# Display results in a clean table format
+site_time_summary %>%
+  kable(format = "pipe", align = "c")
+```
+
+## Implementation
+
+### Bivariate Model Evaluation
+
+In this section, we will implement the evaluation of all possible bivariate models, where each model includes a **single predictor** to predict the target variable **GPP**. The goal is to identify the **best-fitting model** based on the **R²** and **AIC** values.
+
+#### Steps:
+1. **Set One Predictor** (p = 1): For each variable, we will fit a simple linear regression model.
+2. **Fit All Regression Models**: Fit a linear regression model for each predictor and compute the R² and AIC value.
+3. **Select Best Model**: Identify the model with the highest R² and compute its AIC value.
+4. **Output**: Display the best-fitting model based on R² and its corresponding AIC value.
+
+#### Main Function Implementation
+
+```{r PseudoCode, echo = TRUE}
+process_models <- function(df, variables, variable_metadata, target = "GPP_NT_VUT_REF") {
+  # Initialize storage objects
+  models <- list()      # Stores fitted linear models
+  var_names <- list()   # Stores variable names for display
+  formulas <- list()    # Stores model formulas
+  AICs <- numeric()     # Stores AIC values
+  R2s <- numeric()      # Stores R-squared values
+  plots <- list()       # Stores diagnostic plots
+  best_model <- NULL    # Will track the best performing model
+  
+  # Process each predictor variable
+  for (var in variables) {
+    # Prepare data: select target and predictor, remove missing values
+    df_model <- df |>
+      dplyr::select(all_of(c(target, var))) |>
+      na.omit()
+    
+    # Create and fit linear model
+    formula <- as.formula(paste(target, "~", var))
+    model <- lm(formula, data = df_model)
+    
+    # Store model components
+    formulas[[var]] <- formula
+    models[[var]] <- model
+    AICs[[var]] <- AIC(model)
+    R2s[[var]] <- summary(model)$r.squared
+    
+    # Extract metadata for labeling
+    var_index <- which(variable_metadata$variable == var)
+    var_name <- sub(",.*", "", variable_metadata$description[var_index])
+    var_expr <- paste0(var_name, " (", variable_metadata$units[var_index], ")")
+    
+    # Generate diagnostic plot
+    plots[[var]] <- plot_bi(df_model, var, var_expr)
+    var_names[[var]] <- var_name
+    
+    # Print progress information
+    message("Processed: ", var,
+            " | R² = ", round(R2s[[var]], 3),
+            " | AIC = ", round(AICs[[var]], 1))
+    
+    # Update best model if current model performs better
+    if (is.null(best_model) || R2s[[var]] > R2s[[best_model]]) {
+      best_model <- var
+    }
+  }
+  
+  # Compile best model information
+  best_model_info <- list(
+    model = best_model,
+    R2 = R2s[[best_model]],
+    AIC = AICs[[best_model]]
+  )
+  
+  # Print best model summary
+  message("\nBest Model: ", best_model_info$model)
+  message("Best Model R²: ", round(best_model_info$R2, 3))
+  message("Best Model AIC: ", round(best_model_info$AIC, 1))
+  
+  # Return all results
+  return(list(
+    formulas = formulas,
+    models = models,
+    AICs = AICs,
+    R2s = R2s,
+    plots = plots,
+    var_names = var_names
+  ))
+}
+```
+
+### Key Points:
+
+- **`df_clean`**: This is the dataset that contains the target variable (`GPP_NT_VUT_REF`) and the predictors.
+- **`predictors`**: The list of predictor variable names to evaluate in the bivariate models.
+- **`lm(formula, data = df_model)`**: This fits a linear regression model to predict the target variable based on the selected predictor.
+- **`R²` and `AIC`**: These metrics are calculated for each model. R² measures the proportion of variance in the target variable explained by the model, and AIC helps identify the model that balances fit and complexity.
+- **Best Model Selection**: The function identifies the model with the highest R² value and prints out the corresponding AIC for the best-fitting model.
+
+## Results and Interpretation
+
+```{r Functions}
+# Plot bivariate relationship with GPP
+plot_bi <- function(df, x_var, x_label) {
+  ggplot(df, aes(x = .data[[x_var]], y = GPP_NT_VUT_REF)) +
+    geom_point(size = 0.75, alpha = 0.5) +
+    geom_smooth(method = "lm", color = "red") +
+    labs(
+      x = x_label,
+      y = expression(paste("GPP (", mu,"mol CO"[2], " m"^-2, " s"^-1, ")"))
+    ) +
+    theme_classic()
+}
+
+# Combine and save multiple plots
+save_combined_plot <- function(plot_list, 
+                               title = "Diagnostic plots for all models",
+                               filename = "combined_plots.png",
+                               save_path = here("data/figures"),
+                               width = 12,
+                               height = 12) {
+  
+  combined <- plot_grid(
+    plotlist = plot_list,
+    ncol = 3,
+    align = "v"
+  )
+  
+  title_panel <- ggdraw() + 
+    draw_label(title, fontface = 'bold', size = 20, hjust = 0.5)
+  
+  final_plot <- plot_grid(
+    title_panel,
+    combined,
+    ncol = 1,
+    rel_heights = c(0.05, 1)
+  )
+  
+  if (!dir.exists(save_path)) {
+    dir.create(save_path, recursive = TRUE)
+  }
+  
+  ggsave(
+    file.path(save_path, filename),
+    plot = final_plot,
+    width = width,
+    height = height
+  )
+}
+
+# Convert text to plotmath expression
+to_expression <- function(text) {
+  text <- gsub(" ", "~", text)
+  text <- gsub("CO₂", "CO[2]", text)
+  parse(text = text)
+}
+
+# Compare model metrics
+plot_model_metrics <- function(models) {
+  metrics <- data.frame(
+    Variable = unlist(models$var_names),
+    AIC = unlist(models$AICs),
+    R2 = unlist(models$R2s)
+  )
+  
+  metrics_long <- pivot_longer(
+    metrics,
+    cols = c("AIC", "R2"),
+    names_to = "Metric",
+    values_to = "Value"
+  ) %>%
+    mutate(Value_scaled = ifelse(Metric == "R2", Value * 1e5, Value))
+  
+  ggplot(metrics_long, aes(x = reorder(Variable, Value), y = Value_scaled, fill = Metric)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    coord_flip() +
+    labs(
+      title = "Single Predictor Model Comparison",
+      x = "Predictor",
+      y = "Metric Value"
+    ) +
+    scale_fill_manual(
+      values = c("AIC" = "#E69F00", "R2" = "#56B4E9"),
+      labels = c("AIC", expression(R^2))
+    ) +
+    scale_y_continuous(
+      name = "AIC",
+      sec.axis = sec_axis(~./1e5, name = "R²")
+    ) +
+    scale_x_discrete(labels = function(x) parse(text = to_expression(x))) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(hjust = 0.5)
+    )
+}
+```
+
+```{r Modeling, warning=FALSE}
+# dataset clean
+df_clean <- df |>
+  select(siteid, TIMESTAMP,ends_with("_F"), PPFD_IN, USTAR,CO2_F_MDS, GPP_NT_VUT_REF)
+
+# Set variables (or predictors)
+variables <- setdiff(
+  colnames(df_clean), 
+  c("GPP_NT_VUT_REF","siteid", "TIMESTAMP")
+  )
+
+# Modelling process
+models <- process_models(df_clean, variables, variable_metadata, target = "GPP_NT_VUT_REF")
+
+# Compare model metrics 
+plot_model_metrics(models)
+
+# Combine and save multiple plots
+save_path <- save_combined_plot(models$plots)
+
+# Include the saved plots
+knitr::include_graphics(save_path)
+```
+
+
