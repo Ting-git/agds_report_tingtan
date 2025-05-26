@@ -1,0 +1,176 @@
+---
+title: "re_ml02"
+output: html_document
+---
+
+```{r setup}
+# Helper packages
+library(dplyr)      # for data wrangling
+library(ggplot2)    # for awesome graphics
+library(rsample)    # for creating validation splits
+library(recipes)    # for feature engineering
+library(tidyr)      # for drop_na!!!!
+library(knitr)
+
+# Modeling packages
+library(caret)       # for fitting KNN models
+
+source(here::here("R/eval_model.R"))
+```
+
+```{r configuration}
+dav_data_path <- here::here("data_raw/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv")
+lae_data_path <- here::here("data_raw/FLX_CH-Lae_FLUXNET2015_FULLSET_DD_2004-2014_1-4.csv")
+  
+```
+
+```{r datapre}
+
+# function to clean the fluxes data
+clean_flux_data <- function(file_path) {
+  daily_fluxes <- readr::read_csv(file_path) |>  
+    # Select only the relevant variables
+    dplyr::select(
+      TIMESTAMP, 
+      GPP_NT_VUT_REF,         # target variable
+      NEE_VUT_REF_QC,
+      TA_F, TA_F_QC,
+      SW_IN_F, SW_IN_F_QC,
+      VPD_F, VPD_F_QC
+    ) |>
+    
+    # Convert TIMESTAMP to Date format
+    dplyr::mutate(TIMESTAMP = lubridate::ymd(TIMESTAMP)) |>
+    
+    # Replace -9999 with NA
+    dplyr::mutate(across(where(is.numeric), ~na_if(., -9999))) |> 
+    
+    # Set values to NA based on QC threshold (< 0.8)
+    dplyr::mutate(
+      GPP_NT_VUT_REF = ifelse(NEE_VUT_REF_QC < 0.8, NA, GPP_NT_VUT_REF),
+      TA_F           = ifelse(TA_F_QC        < 0.8, NA, TA_F),
+      SW_IN_F        = ifelse(SW_IN_F_QC     < 0.8, NA, SW_IN_F),
+      VPD_F          = ifelse(VPD_F_QC       < 0.8, NA, VPD_F),
+    ) |> 
+    
+    # Drop QC variables
+    dplyr::select(-ends_with("_QC"))
+  
+  
+  return(daily_fluxes)
+}
+
+train_knn_model <- function(data, response = "GPP_NT_VUT_REF", predictors = c("TA_F", "SW_IN_F", "VPD_F"), 
+                            k_values = c(2, 5, 10, 15, 20, 25, 30, 35, 40, 60, 100),
+                            split_ratio = 0.7,
+                            cv_folds = 10,
+                            seed_split = 123,
+                            seed_train = 1982) {
+  set.seed(seed_split)
+  split <- rsample::initial_split(data, prop = split_ratio, strata = "VPD_F")
+  train_data <- rsample::training(split)
+  test_data <- rsample::testing(split)
+
+  # define preprocessing recipe
+  pp <- recipe(as.formula(paste(response, "~", paste(predictors, collapse = " + "))),
+               data = train_data) |> 
+    step_center(all_numeric(), -all_outcomes()) |> 
+    step_scale(all_numeric(), -all_outcomes())
+
+  # train knn model
+  set.seed(seed_train)
+  model <- caret::train(pp,
+                        data = drop_na(train_data),
+                        method = "knn",
+                        trControl = trainControl(method = "cv", number = cv_folds),
+                        tuneGrid = data.frame(k = k_values),
+                        metric = "RMSE")
+
+  return(list(
+    model = model,
+    train_data = train_data,
+    test_data = test_data
+  ))
+}
+
+# load and clean the data
+dav_data_clean <- clean_flux_data(dav_data_path)
+lae_data_clean <- clean_flux_data(lae_data_path)
+dav_lae_data_clean <- bind_rows(dav_data_clean,lae_data_clean)
+
+# KNN models training
+dav_model_result <- train_knn_model(dav_data_clean)
+lae_model_result <- train_knn_model(lae_data_clean)
+dav_lae_model_result <- train_knn_model(dav_lae_data_clean)
+
+ggplot(dav_model_result$model)
+ggplot(lae_model_result$model)
+ggplot(dav_lae_model_result$model)
+
+print(dav_model_result$model$bestTune)
+print(lae_model_result$model$bestTune)
+print(dav_lae_model_result$model$bestTune)
+
+# Model evaluation
+dav_eval_model <- eval_model(dav_model_result$model, 
+                             df_train = dav_model_result$train_data, 
+                             df_test = dav_model_result$test_data,
+                             return_metrics = TRUE)
+
+lae_eval_model <- eval_model(lae_model_result$model, 
+                             df_train = lae_model_result$train_data, 
+                             df_test = lae_model_result$test_data,
+                             return_metrics = TRUE)
+
+dav_lae_eval_model <- eval_model(dav_lae_model_result$model, 
+                             df_train = dav_lae_model_result$train_data, 
+                             df_test = dav_lae_model_result$test_data,
+                             return_metrics = TRUE)
+
+dav_eval_model$test
+lae_eval_model$test
+dav_lae_eval_model$test
+
+# Combine all test set evaluation results and label them by evaluation set
+all_eval <- bind_rows(
+  lae_eval_model$test |> mutate(evaluation_set = "Evaluation against Laegern test set"),
+  dav_eval_model$test |> mutate(evaluation_set = "Evaluation against Davos test set"),
+  dav_lae_eval_model$test |> mutate(evaluation_set = "Evaluation against Laegern & Davos test set")
+)
+
+# Reshape to wide format for table output
+eval_table <- all_eval |>
+  select(evaluation_set, .metric, .estimate) |>
+  pivot_wider(names_from = .metric, values_from = .estimate) |>
+  rename(`Model trained on data from [insert sitename/s]` = evaluation_set, 
+         `R²` = rsq, 
+         `RMSE` = rmse, 
+         `MAE` = mae)
+
+kable(eval_table, 
+      caption = "Model Evaluation Metrics",
+      digits = 3,
+      align = c("l", "r", "r", "r"))
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
