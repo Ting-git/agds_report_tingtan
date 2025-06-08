@@ -1,6 +1,5 @@
 
 .DS_Store
-agds_report_ tingtan.Rproj
 
 # History files
 .Rhistory
@@ -24,7 +23,6 @@ agds_report_ tingtan.Rproj
 
 # RStudio files
 .Rproj.user/
-agds_report_tingtan.Rproj
 
 # produced vignettes
 
