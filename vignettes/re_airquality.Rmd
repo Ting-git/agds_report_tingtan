@@ -1,16 +1,20 @@
 ---
 title: "Analysis of the Change of Ozone Concentration"
 subtitle: "Chapter 5 Report Exercise -- Data Visullization"
-author: "Ting Tan"
+author: "Ting Tan (22-108-534)"
 date: "`r Sys.Date()`"
 output:
-  html_document:
-    fig_align: 'center'
+  bookdown::html_document2
 ---
 
 ```{r setup, include=FALSE, eval = TRUE}
+
 knitr::opts_chunk$set(
-  comment = "#>", echo = FALSE, fig.width = 12, message = FALSE
+  comment = "#>",    # Prefixes for printed output from R
+  echo = FALSE,      # Hides R code in the final document
+  fig.width = 12,    # Sets width of figures (in inches)
+  message = FALSE,   # hide messages
+  warning = FALSE    # hide warnings
 )
 
 library(dplyr)
@@ -18,7 +22,11 @@ library(ggplot2)
 library(tidyr)  
 library(lubridate)
 library(cowplot)
+
+source(here::here("R/re_airquality.R"))
 ```
+
+---
 
 ## Introduction
 
@@ -26,10 +34,13 @@ Ground-level ozone has significant impacts on both the environment and human hea
 
 Ozone levels vary over time, typically peaking in warmer months due to increased sunlight and temperature, which enhance photochemical reactions. Key influencing factors include temperature, solar radiation, wind speed, and the presence of pollutants such as nitrogen oxides (NOₓ) and volatile organic compounds (VOCs), especially in urban areas.
 
+---
+
 ## Research Question
 
-* **What are the main factors influencing ground-level ozone concentration? **
 * **How does solar radiation, wind and temperature affect the concentration of ground-level ozone? **
+
+---
 
 ## Available data
 
@@ -41,17 +52,15 @@ This analysis uses the airquality dataset in R, which contains 153 daily observa
 * Temperature (°F) – Daily maximum at LaGuardia Airport
 * Month and Day
 
-###  Data Overview
+---
 
-#### Missing Values
+## Missing Value Handling
 
-Out of 153 observations, 42 contain missing values in Ozone and Solar.R, mostly occurring in June. These incomplete records are excluded from the analysis to ensure data quality. (See Figure 1a)
-
-#### Initial Trend
+Out of 153 observations, 42 contain missing values in Ozone and Solar.R, mostly occurring in June (See Figure \@ref(fig:missdata)a). These incomplete records are excluded from the analysis to ensure data quality. 
 
 Figure 1b shows that ozone concentrations fluctuate notably during midsummer, with sharp, short-term spikes. The missing data in June limits full interpretation of trends during that period.
 
-```{r Data_Cleaning, eval = TRUE}
+```{r dataclean, eval = TRUE}
 # Load the airquality dataset
 data("airquality")
 
@@ -99,7 +108,7 @@ background_data <- airquality_clean |>
     # No need for background_color column now
   )
 
-# Plotting
+# Plotting Ozone Concentration with missing values marked
 plot_o <- ggplot(airquality_clean, aes(x = Date, y = Ozone)) +
   # Background rectangles to indicate gaps
   geom_rect(data = background_data, 
@@ -121,11 +130,13 @@ plot_o <- ggplot(airquality_clean, aes(x = Date, y = Ozone)) +
   theme(legend.position = "right")  # Position the legend to the right
 ```
 
-```{r ozone_plot, fig.cap = "Figure 1: (a) Missing value distribution of all variables in the airquality dataset; (b) Temporal trend of Ozone concentration after data cleaning (i.e., removing all observations containing missing values).", fig.align = 'center'}
+```{r missdata, fig.cap = "(a) Missing value distribution of all variables in the airquality dataset; (b) Temporal trend of Ozone concentration after data cleaning (i.e., removing all observations containing missing values).", fig.align = 'center'}
 
 # Display the plot
 cowplot::plot_grid(plot_mis, plot_o, ncol = 1, labels = "auto", align = "v")
 ```
+
+---
 
 ## Temporal Variation Analysis
 
@@ -135,9 +146,9 @@ To explore how ozone levels vary over time, we first compare their trends with t
 * Wind Speed appears negatively related—higher ozone levels tend to occur on calmer days.
 * Solar Radiation does not show a clear pattern in relation to ozone levels.
 
-```{r standardized_time_series_plot_separated, fig.cap = "Figure 2: Temporal variations of standardized Ozone, Temperature, Wind Speed, and Solar Radiation, plotted separately.", fig.align = 'center'}
+```{r alldata, fig.cap = "Temporal variations of standardized Ozone, Temperature, Wind Speed, and Solar Radiation, plotted separately.", fig.align = 'center'}
 # Standardize the variables: Ozone, Temp, Wind, Solar.R
-airquality_standardized <- airquality_clean %>%
+airquality_standardized <- airquality_clean |>
   mutate(
     Ozone = scale(Ozone),
     Temp = scale(Temp),
@@ -150,25 +161,25 @@ plot_ozone <- ggplot(airquality_standardized, aes(x = Date, y = Ozone)) +
   geom_line(color = "blue") +
   geom_point(size = 1) +
   labs(title = "Standardized Ozone", x = NULL, y = NULL) +
-  theme_minimal()
+  theme_classic()
 
 plot_temp <- ggplot(airquality_standardized, aes(x = Date, y = Temp)) +
   geom_line(color = "red") +
   geom_point(size = 1) +
   labs(title = "Standardized Temperature", x = NULL, y = NULL) +
-  theme_minimal()
+  theme_classic()
 
 plot_wind <- ggplot(airquality_standardized, aes(x = Date, y = Wind)) +
   geom_line(color = "green") +
   geom_point(size = 1) +
   labs(title = "Standardized Wind Speed", x = NULL, y = NULL) +
-  theme_minimal()
+  theme_classic()
 
 plot_solar <- ggplot(airquality_standardized, aes(x = Date, y = Solar.R)) +
   geom_line(color = "purple") +
   geom_point(size = 1) +
   labs(title = "Standardized Solar Radiation", x = NULL, y = NULL) +
-  theme_minimal()
+  theme_classic()
 
 # Combine the plots in a grid layout (2 rows and 2 columns)
 combined_standardized_plot <- plot_grid(plot_ozone, plot_temp, plot_wind, plot_solar, 
@@ -179,85 +190,20 @@ combined_standardized_plot
 
 ```
 
-## Implementation
+---
 
-To further investigate these relationships, we conducted separate linear regression analyses of ozone concentration against each meteorological variable. This approach helps quantify each variable’s influence on ozone levels and visualize the strength and direction of the effects.
+## Regression Analysis
 
-```{r MainFuction}
-process_models <- function(df_clean){
-  # Create an empty list to store each plot
-  plot_list <- list()
-  
-  meta_data <- list(
-    variable = c("Solar.R", "Wind", "Temp"),
-    formula = c("Ozone ~ Solar.R", "Ozone ~ Wind", "Ozone ~ Temp"),
-    lab_txt = c("Solar Radiation (lang)", "Wind Speed (mph)", "Temperature (°F)")
-  )
-  
-  for (i in 1:length(meta_data$variable)) {
-    # Dynamically generate the regression formula
-    formula <- as.formula(meta_data$formula[i])
-    
-    # Compute the regression model
-    model <- lm(formula, data = df_clean)
-    summary_model <- summary(model)
-    
-    # Extract R² and p-value
-    r_squared <- round(summary_model$r.squared, 3)
-    p_value <- summary_model$coefficients[2, 4]  # p-value is the 4th element in the second row
+To further investigate these relationships, we conducted separate linear regression analyses of ozone concentration against each meteorological variable. This approach helps quantify each variable’s influence on ozone levels and visualize the strength and direction of the effects. Figure \@ref(fig:regression) summarizes the regression results:
 
-    # Format p-value text
-    p_text <- if (p_value < 0.005) {
-      "P < 0.005"
-    } else {
-      paste("P =", round(p_value, 3))
-    }
-    
-    # Create annotation text
-    annotation_text <- paste("R² =", r_squared, "\n", p_text)
-    
-    # Plot each variable against Ozone
-    suppressWarnings(
-      p <- ggplot(df_clean, aes_string(x = meta_data$variable[i], y = "Ozone")) +
-        geom_point(color = "black", alpha = 0.8) +
-        geom_smooth(
-          method = "lm",
-          se = FALSE,
-          color = "red",
-          linewidth = 0.5
-        ) +
-        annotate(
-          "text",
-          x = max(df_clean[[meta_data$variable[i]]], na.rm = TRUE) - 5,
-          y = max(df_clean$Ozone, na.rm = TRUE) - 10,
-          label = annotation_text,
-          hjust = 1,
-          size = 3,
-          color = "black"
-        ) +
-        labs(x = meta_data$lab_txt[i], y = NULL) +
-        theme_classic()
-    )
-    # Add the plot to the list
-    plot_list[[i]] <- p
-  }
-  
-  # Return the list containing all the plots
-  return(plot_list)
-}
-```
-
-## Results and Interpretation
-
-Figure 3 summarizes the regression results:
-
-* Temperature has a strong positive correlation with ozone. Warmer days are linked to higher ozone levels, consistent with photochemical ozone formation.
-* Wind Speed shows a clear negative correlation. Stronger winds help disperse pollutants, leading to lower ozone concentrations.
+* Temperature has the strongest positive correlation with ozone (R²). Warmer days are linked to higher ozone levels, consistent with photochemical ozone formation.
+* Wind Speed shows a clear negative correlation as well. Stronger winds help disperse pollutants, leading to lower ozone concentrations.
 * Solar Radiation has a weaker and less consistent relationship with ozone, suggesting a more complex or indirect influence.
 
 These findings highlight the roles of temperature and wind in shaping urban ozone pollution. Such insights are valuable for informing air quality policies, especially in cities where temperature and wind patterns can exacerbate pollution episodes.
 
-```{r regression_plot, fig.cap = "Figure 3: Regression analysis of Ozone concentration with environmental variables. (a) shows Solar Radiation, (b) shows Wind Speed, and (c) shows Temperature. Each plot includes the regression line with R² and p-value annotations.", fig.align = 'center'}
+
+```{r regression, fig.cap = "Regression analysis of Ozone concentration with environmental variables. (a) shows Solar Radiation, (b) shows Wind Speed, and (c) shows Temperature. Each plot includes the regression line with R² and p-value annotations.", fig.align = 'center'}
 # Generate the individual plots
 plots <- process_models(airquality_clean)
 
@@ -268,3 +214,13 @@ final_plot <- ggdraw() +
   draw_plot(combined_plot, x = 0.05, y = 0, width = 0.95, height = 1)
 
 final_plot
+```
+
+---
+
+## Conclusion
+
+Ozone levels in New York during summer 1973 were most strongly influenced by temperature and wind speed. Higher temperatures were linked to increased ozone, while stronger winds reduced it. Solar radiation showed a weaker effect. These findings highlight the need to consider weather conditions in managing urban air quality.
+
+
+

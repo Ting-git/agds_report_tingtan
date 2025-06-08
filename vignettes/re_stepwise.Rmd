@@ -1,11 +1,10 @@
 ---
 title: "Key Environmental Predictors of GPP"
-subtitle: "Chapter 9 Exercise Report - Stepwise Regression Analysis"
+subtitle: "Chapter 9 Exercise Report -- Stepwise Regression Analysis"
 author: "Ting Tan (22-108-534)"
 date: "`r Sys.Date()`"
 output:
-  html_document:
-    fig_align: 'center'
+  bookdown::html_document2
 ---
 
 ```{r setup, include=FALSE, eval = TRUE}
@@ -17,26 +16,63 @@ library(dplyr)
 library(knitr)
 library(ggplot2)
 library(cowplot)
-library(here)
 library(tidyr)
+library(kableExtra)
+library(glue)
+
+source(here::here("R/re_stepwise.R"))
 ```
+
+---
 
 ## Introduction
 
 Gross Primary Production (GPP) represents the total carbon uptake by vegetation and is influenced by multiple environmental variables. Using high-frequency half-hourly flux data, this study aims to identify the key predictors of GPP. A stepwise forward regression algorithm is implemented from scratch in R to build a predictive model and select the most relevant variables.
 
+---
+
 ## Reasearch question
 
 **Which environmental variables best predict GPP in half-hourly flux data, as determined by a stepwise forward regression approach?**
 
+---
+
 ## Available data
 
-The dataset, sourced from [here](https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv), contains daily aggregated measurements from four flux tower sites in Switzerland. Key variables include air temperature (TA_F), incoming shortwave radiation (SW_IN_F), incoming longwave radiation (LW_IN_F), vapor pressure deficit (VPD_F), wind speed (WS_F), precipitation (P_F), CO₂ mole fraction(CO2_F_MDS), Photosynthetic photon flux density (PPFD_IN), Friction velocity(USTAR, indicates atmospheric turbulence). The target variable for modeling is gross primary production (GPP_NT_VUT_REF). The dataset also provides quality-controlled and gap-filled versions of the variables.
+```{r}
+# Read data from GitHub
+df <- read.csv("https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv") |> 
+  mutate(TIMESTAMP = as.Date(TIMESTAMP)) 
+```
 
-For modeling GPP, a subset of variables was selected based on data quality. Specifically, variables ending with `_F` were prioritized due to their higher data completeness. Most variables ending with `_F_MDS`, which are gap-filled using the Marginal Distribution Sampling (MDS) method, were excluded because they contain significant missing values. However, key predictors such as `CO2_F_MDS`, `PPFD_IN`, and `USTAR` were retained despite some missing data.
+The dataset, obtained from [this source](https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv), contains daily aggregated measurements from four flux tower sites in Switzerland (see Table \@ref(tab:siteinfo)). The target variable for our modeling is gross primary production (`GPP_NT_VUT_REF`), while the other variables in the original dataset are summarized in Table \@ref(tab:metadata).
 
-### Variable Descriptions
-```{r MetaDataPre}
+For modeling GPP, we selected a subset of predictor variables based on data quality. Variables ending with `_F` were prioritized because they generally exhibit higher data completeness. In contrast, most variables ending with `_F_MDS`—which are gap-filled using the Marginal Distribution Sampling (MDS) method—were excluded due to substantial missing values. Nevertheless, key predictors such as `CO2_F_MDS`, `PPFD_IN`, and `USTAR` were retained despite some missing data.
+
+
+```{r siteinfo, results='asis'}
+# Extract site information and display it as a table
+df |>
+  group_by(siteid) |>
+  summarise(
+    start_date = min(TIMESTAMP, na.rm = TRUE),
+    end_date = max(TIMESTAMP, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+   kable(
+    col.names = c("Site", "Start date", "End date"),
+    caption = "Site Information of the Raw Data",
+    format = "html",
+    booktabs = TRUE
+  ) |>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = TRUE,
+    position = "center"
+  )
+```
+
+```{r metadata, results='asis'}
 variable_metadata <- data.frame(
   id = 1:15,
   variable = c(
@@ -70,33 +106,20 @@ variable_metadata <- data.frame(
   stringsAsFactors = FALSE
 )
 
-kable(variable_metadata, caption = "Variable Descriptions")
-```
-### Data Overview 
-```{r DataOverview}
-# Read data from GitHub
-df <- read.csv("https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv")
-
-# Display first few rows and summary
-head(df)
-summary(df)
-
-# Convert TIMESTAMP to Date format
-df <- df |> mutate(TIMESTAMP = as.Date(TIMESTAMP))
-
-# Calculate date range for each site
-site_time_summary <- df %>%
-  group_by(siteid) %>%
-  summarise(
-    start_date = min(TIMESTAMP, na.rm = TRUE),
-    end_date = max(TIMESTAMP, na.rm = TRUE),
-    .groups = "drop"
+variable_metadata |> 
+  kable(
+      caption = "Variable Descriptions",
+      format = "html",
+      booktabs = TRUE
+      )|>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = TRUE,
+    position = "center"
   )
-  
-# Display results in a clean table format
-site_time_summary %>%
-  kable(format = "pipe", align = "c")
 ```
+
+---
 
 ## Implementation
 
@@ -110,9 +133,9 @@ In this section, we will implement the evaluation of all possible bivariate mode
 3. **Select Best Model**: Identify the model with the highest R² and compute its AIC value.
 4. **Output**: Display the best-fitting model based on R² and its corresponding AIC value.
 
-#### Main Function Implementation
+#### Main Implementation Function 
 
-```{r PseudoCode, echo = TRUE}
+```{r mainFunction, echo = TRUE}
 process_models <- function(df, variables, variable_metadata, target = "GPP_NT_VUT_REF") {
   # Initialize storage objects
   models <- list()      # Stores fitted linear models
@@ -167,11 +190,6 @@ process_models <- function(df, variables, variable_metadata, target = "GPP_NT_VU
     AIC = AICs[[best_model]]
   )
   
-  # Print best model summary
-  message("\nBest Model: ", best_model_info$model)
-  message("Best Model R²: ", round(best_model_info$R2, 3))
-  message("Best Model AIC: ", round(best_model_info$AIC, 1))
-  
   # Return all results
   return(list(
     formulas = formulas,
@@ -179,12 +197,11 @@ process_models <- function(df, variables, variable_metadata, target = "GPP_NT_VU
     AICs = AICs,
     R2s = R2s,
     plots = plots,
-    var_names = var_names
+    var_names = var_names,
+    best_model_info = best_model_info
   ))
 }
 ```
-
-### Key Points:
 
 - **`df_clean`**: This is the dataset that contains the target variable (`GPP_NT_VUT_REF`) and the predictors.
 - **`predictors`**: The list of predictor variable names to evaluate in the bivariate models.
@@ -192,109 +209,11 @@ process_models <- function(df, variables, variable_metadata, target = "GPP_NT_VU
 - **`R²` and `AIC`**: These metrics are calculated for each model. R² measures the proportion of variance in the target variable explained by the model, and AIC helps identify the model that balances fit and complexity.
 - **Best Model Selection**: The function identifies the model with the highest R² value and prints out the corresponding AIC for the best-fitting model.
 
-## Results and Interpretation
 
-```{r Functions}
-# Plot bivariate relationship with GPP
-plot_bi <- function(df, x_var, x_label) {
-  ggplot(df, aes(x = .data[[x_var]], y = GPP_NT_VUT_REF)) +
-    geom_point(size = 0.75, alpha = 0.5) +
-    geom_smooth(method = "lm", color = "red") +
-    labs(
-      x = x_label,
-      y = expression(paste("GPP (", mu,"mol CO"[2], " m"^-2, " s"^-1, ")"))
-    ) +
-    theme_classic()
-}
-
-# Combine and save multiple plots
-save_combined_plot <- function(plot_list, 
-                               title = "Diagnostic plots for all models",
-                               filename = "combined_plots.png",
-                               save_path = here("data/figures"),
-                               width = 12,
-                               height = 12) {
-  
-  combined <- plot_grid(
-    plotlist = plot_list,
-    ncol = 3,
-    align = "v"
-  )
-  
-  title_panel <- ggdraw() + 
-    draw_label(title, fontface = 'bold', size = 20, hjust = 0.5)
-  
-  final_plot <- plot_grid(
-    title_panel,
-    combined,
-    ncol = 1,
-    rel_heights = c(0.05, 1)
-  )
-  
-  if (!dir.exists(save_path)) {
-    dir.create(save_path, recursive = TRUE)
-  }
-  
-  ggsave(
-    file.path(save_path, filename),
-    plot = final_plot,
-    width = width,
-    height = height
-  )
-}
-
-# Convert text to plotmath expression
-to_expression <- function(text) {
-  text <- gsub(" ", "~", text)
-  text <- gsub("CO₂", "CO[2]", text)
-  parse(text = text)
-}
-
-# Compare model metrics
-plot_model_metrics <- function(models) {
-  metrics <- data.frame(
-    Variable = unlist(models$var_names),
-    AIC = unlist(models$AICs),
-    R2 = unlist(models$R2s)
-  )
-  
-  metrics_long <- pivot_longer(
-    metrics,
-    cols = c("AIC", "R2"),
-    names_to = "Metric",
-    values_to = "Value"
-  ) %>%
-    mutate(Value_scaled = ifelse(Metric == "R2", Value * 1e5, Value))
-  
-  ggplot(metrics_long, aes(x = reorder(Variable, Value), y = Value_scaled, fill = Metric)) +
-    geom_bar(stat = "identity", position = "dodge") +
-    coord_flip() +
-    labs(
-      title = "Single Predictor Model Comparison",
-      x = "Predictor",
-      y = "Metric Value"
-    ) +
-    scale_fill_manual(
-      values = c("AIC" = "#E69F00", "R2" = "#56B4E9"),
-      labels = c("AIC", expression(R^2))
-    ) +
-    scale_y_continuous(
-      name = "AIC",
-      sec.axis = sec_axis(~./1e5, name = "R²")
-    ) +
-    scale_x_discrete(labels = function(x) parse(text = to_expression(x))) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      plot.title = element_text(hjust = 0.5)
-    )
-}
-```
-
-```{r Modeling, warning=FALSE}
+```{r getmodel, results = 'asis', warning=FALSE}
 # dataset clean
 df_clean <- df |>
-  select(siteid, TIMESTAMP,ends_with("_F"), PPFD_IN, USTAR,CO2_F_MDS, GPP_NT_VUT_REF)
+  dplyr::select(siteid, TIMESTAMP,ends_with("_F"), PPFD_IN, USTAR,CO2_F_MDS, GPP_NT_VUT_REF)
 
 # Set variables (or predictors)
 variables <- setdiff(
@@ -304,15 +223,28 @@ variables <- setdiff(
 
 # Modelling process
 models <- process_models(df_clean, variables, variable_metadata, target = "GPP_NT_VUT_REF")
+```
 
+---
+
+## Results and Discussion
+
+As shown in Figure \@ref(fig:metric), model performance varies across predictors, with **PPFD_IN** showing the best combination of low AIC and high R². PPFD_IN represents the amount of photosynthetically active radiation (PAR) received at the canopy level, which is a critical driver of photosynthesis in plants. The relatively high R² value of 0.45 indicates that nearly 45% of the variation in GPP can be explained by changes in incoming light alone. This result is consistent with ecological understanding, as light availability is one of the primary environmental factors controlling carbon assimilation in terrestrial ecosystems. The AIC value of 77577.9 suggests that, among all tested variables, the model using PPFD_IN balances explanatory power and model complexity most effectively.
+
+```{r metric, fig.cap="Comparison of model performance using AIC and R² metrics", fig.align='center'}
 # Compare model metrics 
 plot_model_metrics(models)
+```
 
+Analysis of the individual models presented in Figures \@ref(fig:diagnostic) and \@ref(fig:metric) reveals several key insights for GPP prediction modeling. Incoming shortwave radiation emerges as a consistently strong predictor, showing comparable importance across different model configurations. This predictive power likely stems from its high correlation with PPFD, as both variables capture similar light availability information for photosynthesis. Given this substantial collinearity, modelers should implement a strict either-or selection between these two radiation variables to maintain model robustness and avoid inflation of variance estimates.
+
+Beyond radiation variables, air temperature demonstrates particularly strong explanatory power for GPP variation, especially in temperate ecosystems where thermal constraints significantly influence photosynthetic activity. The nearly universal significance of temperature across model permutations suggests it should be prioritized in subsequent model development. Secondary environmental controls including vapor pressure deficit and incoming longwave radiation show more context-dependent importance, with their inclusion value potentially varying by biome type or temporal scale of analysis.
+
+```{r diagnostic, fig.cap="Diagnostic plots for all single-predictor models", fig.align='center'}
 # Combine and save multiple plots
 save_path <- save_combined_plot(models$plots)
-
 # Include the saved plots
 knitr::include_graphics(save_path)
 ```
 
-
+---

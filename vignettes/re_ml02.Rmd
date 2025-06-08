@@ -1,9 +1,18 @@
 ---
-title: "re_ml02"
-output: html_document
+title: "Training the KNN model on ecosystem flux observations from Davos and Laegern."
+subtitle: "Chapter 11 Report Exercise -- Model Generalisability Analysis"
+author: "Ting Tan (22-108-534)"
+date: "`r Sys.Date()`"
+output:
+  bookdown::html_document2:
+    number_sections: true
 ---
 
-```{r setup}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  comment = "#>", echo = FALSE, fig.width = 12, message = FALSE, warning = FALSE
+)
+
 # Helper packages
 library(dplyr)      # for data wrangling
 library(ggplot2)    # for awesome graphics
@@ -11,166 +20,248 @@ library(rsample)    # for creating validation splits
 library(recipes)    # for feature engineering
 library(tidyr)      # for drop_na!!!!
 library(knitr)
-
-# Modeling packages
-library(caret)       # for fitting KNN models
+library(kableExtra)
+library(caret)       # Modeling packages for fitting KNN models
 
 source(here::here("R/eval_model.R"))
+source(here::here("R/KNN_model.R"))
 ```
+
 
 ```{r configuration}
 dav_data_path <- here::here("data_raw/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv")
 lae_data_path <- here::here("data_raw/FLX_CH-Lae_FLUXNET2015_FULLSET_DD_2004-2014_1-4.csv")
-  
 ```
 
+---
+
+## Introduction
+
+This project evaluates the **generalisability** of K-Nearest Neighbors (KNN) models trained on ecosystem flux data across different sites. Specifically, we use incoming shortwave radiation (`SW_IN_F`), air temperature (`TA_F`), and vapor pressure deficit (`VPD_F`) as input variables to predict Gross Primary Production (`GPP_NT_VUT_REF`). The analysis focuses on assessing how well models trained on data from one site (either Davos or Laegern) can predict fluxes at another site with distinct environmental conditions. By training models on individual sites as well as combined datasets, and testing them across locations, we aim to evaluate the spatial generalisation capability of KNN models—an essential aspect for robust ecological forecasting and spatial upscaling.
+
+---
+
+## Research Question
+
+**Can KNN models trained at one ecological site reliably predict ecosystem fluxes at a different site?**
+
+---
+
+## Available data
+
+The project uses ecosystem flux data from two distinct sites: [Davos (CH-Dav)](https://fluxnet.org/sites/siteinfo/CH-Dav) (`FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv`), and  [Laegern (CH-Lae)](https://fluxnet.org/sites/siteinfo/CH-Lae) (`FLX_CH-Lae_FLUXNET2015_FULLSET_DD_2004-2014_1-4.csv`). Both sites are registered in the FLUXNET network. The important site information is shown in the Table \@ref(tab:siteinfo).
+
+The temporal data visualization reveals significantly higher gross primary productivity (GPP) and air temperature at Laegern compared to Davos, particularly during summer. While both sites exhibit similar solar radiation patterns, Laegern shows slightly greater variability. Additionally, Laegern has a moderately higher vapor pressure deficit (VPD) in summer, indicating somewhat drier conditions than Davos (see Figure \@ref(fig:sitedata)).
+
 ```{r datapre}
-
-# function to clean the fluxes data
-clean_flux_data <- function(file_path) {
-  daily_fluxes <- readr::read_csv(file_path) |>  
-    # Select only the relevant variables
-    dplyr::select(
-      TIMESTAMP, 
-      GPP_NT_VUT_REF,         # target variable
-      NEE_VUT_REF_QC,
-      TA_F, TA_F_QC,
-      SW_IN_F, SW_IN_F_QC,
-      VPD_F, VPD_F_QC
-    ) |>
-    
-    # Convert TIMESTAMP to Date format
-    dplyr::mutate(TIMESTAMP = lubridate::ymd(TIMESTAMP)) |>
-    
-    # Replace -9999 with NA
-    dplyr::mutate(across(where(is.numeric), ~na_if(., -9999))) |> 
-    
-    # Set values to NA based on QC threshold (< 0.8)
-    dplyr::mutate(
-      GPP_NT_VUT_REF = ifelse(NEE_VUT_REF_QC < 0.8, NA, GPP_NT_VUT_REF),
-      TA_F           = ifelse(TA_F_QC        < 0.8, NA, TA_F),
-      SW_IN_F        = ifelse(SW_IN_F_QC     < 0.8, NA, SW_IN_F),
-      VPD_F          = ifelse(VPD_F_QC       < 0.8, NA, VPD_F),
-    ) |> 
-    
-    # Drop QC variables
-    dplyr::select(-ends_with("_QC"))
-  
-  
-  return(daily_fluxes)
-}
-
-train_knn_model <- function(data, response = "GPP_NT_VUT_REF", predictors = c("TA_F", "SW_IN_F", "VPD_F"), 
-                            k_values = c(2, 5, 10, 15, 20, 25, 30, 35, 40, 60, 100),
-                            split_ratio = 0.7,
-                            cv_folds = 10,
-                            seed_split = 123,
-                            seed_train = 1982) {
-  set.seed(seed_split)
-  split <- rsample::initial_split(data, prop = split_ratio, strata = "VPD_F")
-  train_data <- rsample::training(split)
-  test_data <- rsample::testing(split)
-
-  # define preprocessing recipe
-  pp <- recipe(as.formula(paste(response, "~", paste(predictors, collapse = " + "))),
-               data = train_data) |> 
-    step_center(all_numeric(), -all_outcomes()) |> 
-    step_scale(all_numeric(), -all_outcomes())
-
-  # train knn model
-  set.seed(seed_train)
-  model <- caret::train(pp,
-                        data = drop_na(train_data),
-                        method = "knn",
-                        trControl = trainControl(method = "cv", number = cv_folds),
-                        tuneGrid = data.frame(k = k_values),
-                        metric = "RMSE")
-
-  return(list(
-    model = model,
-    train_data = train_data,
-    test_data = test_data
-  ))
-}
 
 # load and clean the data
 dav_data_clean <- clean_flux_data(dav_data_path)
 lae_data_clean <- clean_flux_data(lae_data_path)
-dav_lae_data_clean <- bind_rows(dav_data_clean,lae_data_clean)
 
-# KNN models training
-dav_model_result <- train_knn_model(dav_data_clean)
-lae_model_result <- train_knn_model(lae_data_clean)
-dav_lae_model_result <- train_knn_model(dav_lae_data_clean)
+```
 
-ggplot(dav_model_result$model)
-ggplot(lae_model_result$model)
-ggplot(dav_lae_model_result$model)
+```{r siteinfo, tab.cap="Information Comparison of Davos and Laegern FLUXNET Sites", echo=FALSE}
 
-print(dav_model_result$model$bestTune)
-print(lae_model_result$model$bestTune)
-print(dav_lae_model_result$model$bestTune)
-
-# Model evaluation
-dav_eval_model <- eval_model(dav_model_result$model, 
-                             df_train = dav_model_result$train_data, 
-                             df_test = dav_model_result$test_data,
-                             return_metrics = TRUE)
-
-lae_eval_model <- eval_model(lae_model_result$model, 
-                             df_train = lae_model_result$train_data, 
-                             df_test = lae_model_result$test_data,
-                             return_metrics = TRUE)
-
-dav_lae_eval_model <- eval_model(dav_lae_model_result$model, 
-                             df_train = dav_lae_model_result$train_data, 
-                             df_test = dav_lae_model_result$test_data,
-                             return_metrics = TRUE)
-
-dav_eval_model$test
-lae_eval_model$test
-dav_lae_eval_model$test
-
-# Combine all test set evaluation results and label them by evaluation set
-all_eval <- bind_rows(
-  lae_eval_model$test |> mutate(evaluation_set = "Evaluation against Laegern test set"),
-  dav_eval_model$test |> mutate(evaluation_set = "Evaluation against Davos test set"),
-  dav_lae_eval_model$test |> mutate(evaluation_set = "Evaluation against Laegern & Davos test set")
+df <- data.frame(
+  Indicator = c("Longitude", "Latitude", "Elevation", "Vegetation IGBP", "Climate Koeppen", 
+                "Mean Annual Temperature", "Annual Precipitation"),
+  `Davos (CH-Dav)` = c("9.8559° E", "46.8153° N", "1639 m", "ENF (Evergreen Needleleaf Forests: Lands dominated by woody vegetation with a percent cover >60% and height exceeding 2 meters. Almost all trees remain green all year. Canopy is never without green foliage.)", 
+                       "ET (Tundra). Alpine climate, cold, precipitation mainly in summer", "2.8°C", "1062 mm"),
+  `Laegern (CH-Lae)` = c("8.3644° E", "47.4783° N", "689 m", "MF (Mixed Forests: Lands dominated by trees with a percent cover >60% and height exceeding 2 meters. Consists of tree communities with interspersed mixtures or mosaics of the other four forest types. None of the forest types exceeds 60% of landscape.)", 
+                         "--", "8.3°C", "1100 mm"),
+  check.names = FALSE
 )
 
-# Reshape to wide format for table output
-eval_table <- all_eval |>
-  select(evaluation_set, .metric, .estimate) |>
-  pivot_wider(names_from = .metric, values_from = .estimate) |>
-  rename(`Model trained on data from [insert sitename/s]` = evaluation_set, 
-         `R²` = rsq, 
-         `RMSE` = rmse, 
-         `MAE` = mae)
-
-kable(eval_table, 
-      caption = "Model Evaluation Metrics",
-      digits = 3,
-      align = c("l", "r", "r", "r"))
+kable(df, "html") |>
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed")) |>
+  footnote(general = "Data sources: FLUXNET site info (https://fluxnet.org/sites/siteinfo/CH-Dav, https://fluxnet.org/sites/siteinfo/CH-Lae)", general_title = "Source:")
 ```
 
-```{r}
+```{r sitedata, echo = FALSE, fig.cap = "Time series comparison of variables at CH-Dav and CH-Lae", fig.align='center'}
+# Add a new column to identify site for each dataset
+dav_data_clean$Site <- "CH-Dav"
+lae_data_clean$Site <- "CH-Lae"
+
+# Combine the two datasets into one
+combined_data <- bind_rows(dav_data_clean, lae_data_clean)
+
+# Specify the variables of interest
+vars <- c("GPP_NT_VUT_REF", "SW_IN_F", "VPD_F", "TA_F")
+
+# Reshape data from wide to long format for ggplot
+combined_long <- combined_data |>
+  select(TIMESTAMP, Site, all_of(vars)) |>
+  pivot_longer(cols = all_of(vars), names_to = "Variable", values_to = "Value")
+
+# Define labels with parsed expressions for nice formatting (with subscripts and superscripts)
+var_labels <- c(
+  GPP_NT_VUT_REF = "Gross~Primary~Production~(mu*mol~CO[2]/m^{2}/s)",
+  TA_F = "Air~Temperature~(degree*C)",
+  SW_IN_F = "Shortwave~Radiation~(W/m^{2})",
+  VPD_F = "Vapor~Pressure~Deficit~(hPa)"
+)
+
+# Replace variable factor levels with formatted labels for plotting
+combined_long$Variable <- factor(combined_long$Variable, levels = names(var_labels), labels = var_labels)
+
+# Plot time series with one facet per variable and parsed labels
+ggplot(combined_long, aes(x = as.Date(TIMESTAMP), y = Value, color = Site)) +
+  geom_line(alpha = 0.4) +                     # Draw lines with some transparency
+  facet_wrap(~ Variable, scales = "free_y", ncol = 1, labeller = label_parsed) +  # One facet per variable with independent y-axis scales
+  labs(
+    title = NULL,
+    x = NULL,   # No x-axis label
+    y = NULL    # No y-axis label (units are in facet labels)
+  ) +
+  theme_minimal()  # Clean minimal theme for the plot
+
 ```
 
-```{r}
+---
+
+## Implementation
+
+1. **Data Cleaning:** Load and preprocess the flux datasets from Davos and Laegern, filtering variables, handling missing values, and applying quality control thresholds.
+
+2. **Model Training:** Train three KNN models separately on Davos data, Laegern data, and the combined dataset, using 70% of data for training and 10-fold cross-validation to optimize the number of neighbors (k).
+
+3. **Model Testing:** Evaluate each trained model on the reserved 30% test data from Davos, Laegern, and the combined test sets to assess spatial generalisability.
+
+4. **Performance Comparison:** Summarize and compare model performance metrics (R², RMSE, MAE) across all test sets in tabular form.
+
+
+```{r datasplit}
+train_data_list <- list()
+test_data_list <- list()
+
+set.seed(293)
+
+# Split Davos data
+split <- rsample::initial_split(dav_data_clean, prop = 0.7, strata = "VPD_F")
+train_data_list[["dav"]] <- rsample::training(split)
+test_data_list[["dav"]]  <- rsample::testing(split)
+
+# Split Laegern data
+split <- rsample::initial_split(lae_data_clean, prop = 0.7, strata = "VPD_F")
+train_data_list[["lae"]] <- rsample::training(split)
+test_data_list[["lae"]]  <- rsample::testing(split)
+
+# Split Combined data
+combined_data <- bind_rows(dav_data_clean, lae_data_clean)
+split <- rsample::initial_split(combined_data, prop = 0.7, strata = "VPD_F")
+train_data_list[["dav_lae"]] <- rsample::training(split)
+test_data_list[["dav_lae"]]  <- rsample::testing(split)
+
+# Combine for Davos + Laegern
+# train_data_list[["dav_lae"]] <- bind_rows(train_data_list[["dav"]], train_data_list[["lae"]])
+# test_data_list[["dav_lae"]]  <- bind_rows(test_data_list[["dav"]], test_data_list[["lae"]])
+
 ```
 
-```{r}
+```{r modelling}
+
+# KNN-model training
+mod_result_list <- lapply(train_data_list, train_knn_model)
+
 ```
 
-```{r}
+```{r evalueation}
+# use this test set for each model which trained from different dataset
+names(test_data_list) <- c(
+  "Evaluation against Davos test set",
+  "Evaluation against Laegern test set",
+  "Evaluation against Davos & Laegern test set"
+)
+
+# names for creating evaluation table
+names(mod_result_list) <- c(
+  "Model trained on data from Davos (CH-Dav)",
+  "Model trained on data from Laegern (CH-Lae)",
+  "Model trained on data from Davos and Laegern (CH-Dav & CH-Lae)"
+)
+
+eval_table_list <- Map(
+  function(model_result, name) evaluate_model_across_sets(model_result, test_data_list, name),
+  mod_result_list,
+  names(mod_result_list)
+)
+
 ```
 
-```{r}
+--- 
+
+## Results
+
+The evaluation results presented in Table \@ref(tab:eval1) to \@ref(tab:eval3) offer insights into the generalizability of the three models trained on data from different sites.
+
+### **Model trained only on Davos data**
+
+The Dav Model, trained only on data from Davos, performs best on its own test set (RMSE: 1.408, R²: 0.729), indicating good in-site performance. However, its performance significantly deteriorates on the Laegern test set (RMSE: 3.160, R²: 0.510), suggesting limited generalizability to unseen sites.
+
+### **Model trained only on Laegern data**
+
+The Lae Model, trained solely on Laegern data, shows moderate performance on both its own test set (RMSE: 2.388, R²: 0.668) and the Davos test set (RMSE: 2.327, R²: 0.552). While its performance is not as strong as the Dav Model on Davos data, it generalizes slightly better across sites compared to the Dav Model.
+
+### **Model trained on combined Davos + Laegern data**
+
+The Dav-Lae Model, trained on both sites, exhibits the most balanced performance across all evaluations. It achieves lower RMSE and higher R² on both the Davos and Laegern test sets compared to the single-site models when evaluated jointly. This indicates that including diverse data in the training set improves generalizability and robustness across different environments.
+
+
+```{r evaltables, results='asis'}
+# name for table caption
+names(eval_table_list) <- c(
+  "Dav Model Evaluation Metrics",
+  "Lae Model Evaluation Metrics",
+  "Dav-Lae Model Evaluation Metrics"
+)
+
+tab_ids <- c("eval1", "eval2", "eval3") # 表格ID或者块名称不能包含特殊符号，如“_”,否则无法正确引用！！！！
+
+for (i in seq_along(eval_table_list)) {
+
+  cat(sprintf("Table: (#tab:%s) %s\n\n", tab_ids[i], names(eval_table_list)[i]))
+  
+  print(
+    eval_table_list[[i]] |>
+      kable(
+        digits = 3,
+        align = c("l", "r", "r", "r")
+      )
+  )
+}
 ```
 
-```{r}
-```
 
-```{r}
-```
+---
 
+## Discussion
+
+### Environmental Differences Limit Generalizability of Single-Site Models
+
+As shown in Table \@ref(tab:siteinfo) and Figure \@ref(fig:sitedata), the Davos and Laegern sites differ markedly in elevation, climate, and vegetation — key factors influencing the variability of gross primary production (GPP). Davos is a high-altitude, cold tundra region dominated by evergreen needleleaf forests. Its low temperatures suppress photosynthesis, but low surface albedo enhances light-use efficiency, making GPP more dependent on temperature and solar radiation during growing season.
+
+In contrast, Laegern is a lower-elevation, temperate site with mixed forests and a milder climate that supports vegetation growth. However, during the growing season, high temperatures can cause slightly higher levels of vapor pressure deficit (VPD), which indicates mild water stress and can potentially reduce stomatal conductance and limit carbon uptake.
+
+Consequently, the model trained on Davos data performs well at its origin site but generalizes poorly to Laegern (RMSE increases to 3.160, R² drops to 0.510), underscoring its sensitivity to site-specific environmental conditions. The Laegern-trained model, while still less accurate at Davos, exhibits better cross-site performance — possibly because Laegern’s mixed forest shares structural similarities with Davos’ evergreen composition.
+
+### Multi-Site Training Improves Generalizability
+
+The Dav-Lae model, trained on both Davos and Laegern data, demonstrates the best generalization performance. It does not achieve the absolute best results on either site individually, but performs consistently across both with the best overall performance on the combined test set (lowest RMSE: 2.020, highest R²: 0.664).
+
+This shows that exposure to diverse environmental conditions during training enables the model to learn more robust, transferable patterns, improving cross-site predictions.
+
+### Expected Application for a Site in Spain
+
+The model trained on combined data from Davos and Laegern is not a true out-of-sample model. It mainly reflects conditions similar to those two sites. When applied to a site in Spain, its performance may decline because the environmental and vegetation characteristics are quite different.
+
+Davos and Laegern are temperate forest sites with relatively sufficient water supply, while many Spanish sites are dominated by Mediterranean vegetation and face clear water limitations. These differences affect how vegetation responds to environmental factors like radiation and VPD, meaning the model parameters may not capture the dynamics in Spain accurately.
+
+To improve generalizability, training data should include sites with more diverse climates and vegetation types, especially Mediterranean ecosystems.
+
+---
+
+```{r, include=FALSE, eval=FALSE}
+# This code will neither run nor show in the output
+rmarkdown::render(here::here("vignettes/re_ml02.Rmd"))
+```
