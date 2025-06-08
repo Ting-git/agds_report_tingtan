@@ -25,19 +25,19 @@ source(here::here("R/re_stepwise.R"))
 
 ---
 
-## Introduction
+# Introduction
 
 Gross Primary Production (GPP) represents the total carbon uptake by vegetation and is influenced by multiple environmental variables. Using high-frequency half-hourly flux data, this study aims to identify the key predictors of GPP. A stepwise forward regression algorithm is implemented from scratch in R to build a predictive model and select the most relevant variables.
 
 ---
 
-## Reasearch question
+# Reasearch question
 
 **Which environmental variables best predict GPP in half-hourly flux data, as determined by a stepwise forward regression approach?**
 
 ---
 
-## Available data
+# Available data
 
 ```{r}
 # Read data from GitHub
@@ -121,19 +121,19 @@ variable_metadata |>
 
 ---
 
-## Implementation
+# Implementation
 
-### Bivariate Model Evaluation
+## Bivariate Model Evaluation
 
 In this section, we will implement the evaluation of all possible bivariate models, where each model includes a **single predictor** to predict the target variable **GPP**. The goal is to identify the **best-fitting model** based on the **R²** and **AIC** values.
 
-#### Steps:
+### Steps:
 1. **Set One Predictor** (p = 1): For each variable, we will fit a simple linear regression model.
 2. **Fit All Regression Models**: Fit a linear regression model for each predictor and compute the R² and AIC value.
 3. **Select Best Model**: Identify the model with the highest R² and compute its AIC value.
 4. **Output**: Display the best-fitting model based on R² and its corresponding AIC value.
 
-#### Main Implementation Function 
+### Main Implementation Function 
 
 ```{r mainFunction, echo = TRUE}
 process_models <- function(df, variables, variable_metadata, target = "GPP_NT_VUT_REF") {
@@ -227,7 +227,7 @@ models <- process_models(df_clean, variables, variable_metadata, target = "GPP_N
 
 ---
 
-## Results and Discussion
+# Results and Discussion
 
 As shown in Figure \@ref(fig:metric), model performance varies across predictors, with **PPFD_IN** showing the best combination of low AIC and high R². PPFD_IN represents the amount of photosynthetically active radiation (PAR) received at the canopy level, which is a critical driver of photosynthesis in plants. The relatively high R² value of 0.45 indicates that nearly 45% of the variation in GPP can be explained by changes in incoming light alone. This result is consistent with ecological understanding, as light availability is one of the primary environmental factors controlling carbon assimilation in terrestrial ecosystems. The AIC value of 77577.9 suggests that, among all tested variables, the model using PPFD_IN balances explanatory power and model complexity most effectively.
 

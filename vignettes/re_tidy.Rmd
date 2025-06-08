@@ -28,7 +28,7 @@ library(kableExtra)
 
 ---
 
-## Introduction
+# Introduction
 
 The $CO_2$ fertilization effect refers to the enhancement of plant growth resulting from elevated atmospheric carbon dioxide ($CO_2$) concentrations. As $CO_2$ is a fundamental substrate for photosynthesis, higher levels can stimulate photosynthetic rates in many plant species, leading to increased biomass production. This enhanced plant productivity can result in greater inputs of soil organic carbon ($SOC$) through leaf litter, root exudates, and other plant residues. However, increased carbon inputs may also stimulate microbial activity, potentially accelerating the decomposition of existing soil organic carbon—a process known as priming. Thus, while elevated $CO_2$ can initially promote carbon sequestration through increased plant growth, its long-term impact on soil carbon storage is complex and may be counteracted by faster microbial decomposition rates [@groenigen2014].
 
@@ -48,7 +48,7 @@ This project uses *Database S1*, which was downloaded from the supplementary mat
 
 ---
 
-## Implementation
+# Implementation
 
 To evaluate the effect of elevated atmospheric CO₂ on soil organic carbon (SOC), we performed the following steps in R:
 
@@ -130,7 +130,7 @@ write_rds(soc_values_clean,
 ```
 ---
 
-## Results and Discussion
+# Results and Discussion
 
 From Table \@ref(tab:phaselrr), we observe that the SOC response generally follows the same direction as changes in atmospheric CO₂ concentration. During the early phase of exposure, SOC increases at a faster rate than atmospheric CO₂, suggesting a strong initial accumulation of organic carbon in soil. However, this accumulation slows down in the mid phase and eventually reverses in the late phase, with SOC levels declining over time. This pattern—also illustrated in Figure \@ref(fig:explrr)—indicates that although elevated CO₂ may stimulate carbon input initially, it also promotes faster decomposition, which ultimately limits SOC accumulation.
 
@@ -175,7 +175,7 @@ ggplot(soc_co2_lrr, aes(x = CO2_lrr_exp, y = SOC_lrr_exp, colour = year)) +
 
 ---
 
-## Reference
+# Reference
 ```{r, include=FALSE, eval=FALSE}
 # This code will neither run nor show in the output
 rmarkdown::render(here::here("vignettes/re_tidy.Rmd"))

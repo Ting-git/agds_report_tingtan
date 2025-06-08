@@ -35,19 +35,19 @@ lae_data_path <- here::here("data_raw/FLX_CH-Lae_FLUXNET2015_FULLSET_DD_2004-201
 
 ---
 
-## Introduction
+# Introduction
 
 This project evaluates the **generalisability** of K-Nearest Neighbors (KNN) models trained on ecosystem flux data across different sites. Specifically, we use incoming shortwave radiation (`SW_IN_F`), air temperature (`TA_F`), and vapor pressure deficit (`VPD_F`) as input variables to predict Gross Primary Production (`GPP_NT_VUT_REF`). The analysis focuses on assessing how well models trained on data from one site (either Davos or Laegern) can predict fluxes at another site with distinct environmental conditions. By training models on individual sites as well as combined datasets, and testing them across locations, we aim to evaluate the spatial generalisation capability of KNN models—an essential aspect for robust ecological forecasting and spatial upscaling.
 
 ---
 
-## Research Question
+# Research Question
 
 **Can KNN models trained at one ecological site reliably predict ecosystem fluxes at a different site?**
 
 ---
 
-## Available data
+# Available data
 
 The project uses ecosystem flux data from two distinct sites: [Davos (CH-Dav)](https://fluxnet.org/sites/siteinfo/CH-Dav) (`FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv`), and  [Laegern (CH-Lae)](https://fluxnet.org/sites/siteinfo/CH-Lae) (`FLX_CH-Lae_FLUXNET2015_FULLSET_DD_2004-2014_1-4.csv`). Both sites are registered in the FLUXNET network. The important site information is shown in the Table \@ref(tab:siteinfo).
 
@@ -120,7 +120,7 @@ ggplot(combined_long, aes(x = as.Date(TIMESTAMP), y = Value, color = Site)) +
 
 ---
 
-## Implementation
+# Implementation
 
 1. **Data Cleaning:** Load and preprocess the flux datasets from Davos and Laegern, filtering variables, handling missing values, and applying quality control thresholds.
 
@@ -191,19 +191,19 @@ eval_table_list <- Map(
 
 --- 
 
-## Results
+# Results
 
 The evaluation results presented in Table \@ref(tab:eval1) to \@ref(tab:eval3) offer insights into the generalizability of the three models trained on data from different sites.
 
-### **Model trained only on Davos data**
+## **Model trained only on Davos data**
 
 The Dav Model, trained only on data from Davos, performs best on its own test set (RMSE: 1.408, R²: 0.729), indicating good in-site performance. However, its performance significantly deteriorates on the Laegern test set (RMSE: 3.160, R²: 0.510), suggesting limited generalizability to unseen sites.
 
-### **Model trained only on Laegern data**
+## **Model trained only on Laegern data**
 
 The Lae Model, trained solely on Laegern data, shows moderate performance on both its own test set (RMSE: 2.388, R²: 0.668) and the Davos test set (RMSE: 2.327, R²: 0.552). While its performance is not as strong as the Dav Model on Davos data, it generalizes slightly better across sites compared to the Dav Model.
 
-### **Model trained on combined Davos + Laegern data**
+## **Model trained on combined Davos + Laegern data**
 
 The Dav-Lae Model, trained on both sites, exhibits the most balanced performance across all evaluations. It achieves lower RMSE and higher R² on both the Davos and Laegern test sets compared to the single-site models when evaluated jointly. This indicates that including diverse data in the training set improves generalizability and robustness across different environments.
 
@@ -235,9 +235,9 @@ for (i in seq_along(eval_table_list)) {
 
 ---
 
-## Discussion
+# Discussion
 
-### Environmental Differences Limit Generalizability of Single-Site Models
+## Environmental Differences Limit Generalizability of Single-Site Models
 
 As shown in Table \@ref(tab:siteinfo) and Figure \@ref(fig:sitedata), the Davos and Laegern sites differ markedly in elevation, climate, and vegetation — key factors influencing the variability of gross primary production (GPP). Davos is a high-altitude, cold tundra region dominated by evergreen needleleaf forests. Its low temperatures suppress photosynthesis, but low surface albedo enhances light-use efficiency, making GPP more dependent on temperature and solar radiation during growing season.
 
@@ -245,13 +245,13 @@ In contrast, Laegern is a lower-elevation, temperate site with mixed forests and
 
 Consequently, the model trained on Davos data performs well at its origin site but generalizes poorly to Laegern (RMSE increases to 3.160, R² drops to 0.510), underscoring its sensitivity to site-specific environmental conditions. The Laegern-trained model, while still less accurate at Davos, exhibits better cross-site performance — possibly because Laegern’s mixed forest shares structural similarities with Davos’ evergreen composition.
 
-### Multi-Site Training Improves Generalizability
+## Multi-Site Training Improves Generalizability
 
 The Dav-Lae model, trained on both Davos and Laegern data, demonstrates the best generalization performance. It does not achieve the absolute best results on either site individually, but performs consistently across both with the best overall performance on the combined test set (lowest RMSE: 2.020, highest R²: 0.664).
 
 This shows that exposure to diverse environmental conditions during training enables the model to learn more robust, transferable patterns, improving cross-site predictions.
 
-### Expected Application for a Site in Spain
+## Expected Application for a Site in Spain
 
 The model trained on combined data from Davos and Laegern is not a true out-of-sample model. It mainly reflects conditions similar to those two sites. When applied to a site in Spain, its performance may decline because the environmental and vegetation characteristics are quite different.
 

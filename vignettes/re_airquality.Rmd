@@ -28,7 +28,7 @@ source(here::here("R/re_airquality.R"))
 
 ---
 
-## Introduction
+# Introduction
 
 Ground-level ozone has significant impacts on both the environment and human health. While ozone in the upper atmosphere protects life by absorbing harmful ultraviolet (UV) radiation, elevated concentrations at ground level contribute to air pollution, causing respiratory issues and other health problems. Understanding ozone trends and the factors influencing its formation is essential for effective air quality management and public health protection.
 
@@ -36,13 +36,13 @@ Ozone levels vary over time, typically peaking in warmer months due to increased
 
 ---
 
-## Research Question
+# Research Question
 
 * **How does solar radiation, wind and temperature affect the concentration of ground-level ozone? **
 
 ---
 
-## Available data
+# Available data
 
 This analysis uses the airquality dataset in R, which contains 153 daily observations recorded in New York from May to September 1973. The data includes:
 
@@ -54,7 +54,7 @@ This analysis uses the airquality dataset in R, which contains 153 daily observa
 
 ---
 
-## Missing Value Handling
+# Missing Value Handling
 
 Out of 153 observations, 42 contain missing values in Ozone and Solar.R, mostly occurring in June (See Figure \@ref(fig:missdata)a). These incomplete records are excluded from the analysis to ensure data quality. 
 
@@ -138,7 +138,7 @@ cowplot::plot_grid(plot_mis, plot_o, ncol = 1, labels = "auto", align = "v")
 
 ---
 
-## Temporal Variation Analysis
+# Temporal Variation Analysis
 
 To explore how ozone levels vary over time, we first compare their trends with those of solar radiation, wind speed, and temperature.
 
@@ -192,7 +192,7 @@ combined_standardized_plot
 
 ---
 
-## Regression Analysis
+# Regression Analysis
 
 To further investigate these relationships, we conducted separate linear regression analyses of ozone concentration against each meteorological variable. This approach helps quantify each variable’s influence on ozone levels and visualize the strength and direction of the effects. Figure \@ref(fig:regression) summarizes the regression results:
 
@@ -218,7 +218,7 @@ final_plot
 
 ---
 
-## Conclusion
+# Conclusion
 
 Ozone levels in New York during summer 1973 were most strongly influenced by temperature and wind speed. Higher temperatures were linked to increased ozone, while stronger winds reduced it. Solar radiation showed a weaker effect. These findings highlight the need to consider weather conditions in managing urban air quality.
 
