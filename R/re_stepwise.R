@@ -13,7 +13,7 @@ plot_bi <- function(df, x_var, x_label) {
 
 # Combine and save multiple plots
 save_combined_plot <- function(plot_list, 
-                               filename = "combined_plots.png",
+                               filename = "re_stepwise_combined_plots.png",
                                save_path = here::here("data/figures"),
                                width = 12,
                                height = 12) {
