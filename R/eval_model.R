@@ -15,12 +15,17 @@ eval_model <- function(mod, df_train, df_test, return_metrics = FALSE){
   
   # add predictions to the data frames----
   df_train <- df_train |> 
-    drop_na() |>  # magrittr pipe necessary here for the dot ('.') evaluation
-    mutate(fitted =  predict(mod, newdata = df_train))
+    drop_na()
+  
+  df_train <- df_train |> 
+    mutate(fitted = predict(mod, newdata = df_train))
   
   df_test <- df_test |> 
-    drop_na() |> 
-    mutate(fitted =  predict(mod, newdata = df_test))
+    drop_na()
+  
+  df_test <- df_test |> 
+    mutate(fitted = predict(mod, newdata = df_test))
+  
   
   # get metrics tables----
   metrics_train <- df_train |> 
